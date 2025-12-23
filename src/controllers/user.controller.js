@@ -289,11 +289,25 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Something went wrong while uploading avatar");
   }
 
+  //
+  const userWithoutUpdation = await User.findById(req.user?._id);
+  const oldAvatarUrl = userWithoutUpdation?.avatar;
+
   const user = await User.findByIdAndUpdate(
     req.user?._id,
     { $set: { avatar: avatar.url } },
     { new: true }
   ).select("-password");
+
+  // todo : delete old avatar from cloudinary
+  if (oldAvatarUrl) {
+    try {
+      const publicId = oldAvatarUrl.split('/').pop().split('.')[0];
+      await deleteFromCloudinary(publicId);
+    } catch (error) {
+      console.log("Error deleting old avatar from Cloudinary: ", error);
+    }
+  }
 
   return res
     .status(200)
