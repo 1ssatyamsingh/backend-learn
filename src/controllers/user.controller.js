@@ -299,13 +299,22 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     { new: true }
   ).select("-password");
 
-  // todo : delete old avatar from cloudinary
+  // 5. Delete the OLD avatar from Cloudinary (Clean up)
   if (oldAvatarUrl) {
     try {
-      const publicId = oldAvatarUrl.split('/').pop().split('.')[0];
+      // Logic to extract public_id from the URL
+      // Regex matches everything after the last '/' and before the '.' extension
+      const publicId = oldAvatarUrl.split("/").pop().split(".")[0];
+      
+      // NOTE: If you use folders in Cloudinary, simple splitting might fail.
+      // Use this Robust Regex if your URLs contain folders:
+      // const publicId = oldAvatarUrl.match(/\/upload\/(?:v\d+\/)?(.+)\.[^.]+$/)[1];
+
       await deleteFromCloudinary(publicId);
     } catch (error) {
-      console.log("Error deleting old avatar from Cloudinary: ", error);
+      console.log("Failed to delete old avatar:", error);
+      // We do not throw an error here because the main task (update) succeeded.
+      // Just log it for debugging.
     }
   }
 
@@ -355,4 +364,76 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     );
 })
 
-export { registerUser, loginUser , logoutUser, refreshAccessToken, changeCurrentPassword, getCurrentUser , updateAccountDetails, updateUserAvatar, updateUserCoverImage};
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const {username} = req.params;
+
+  if(!username?.trim()){
+    throw new ApiError(400, "Username is missing");
+  }
+
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase()
+      }
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers"
+      }
+    },
+    {
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedTo"
+      }
+    },
+    {
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscribers"
+        },
+        channelsSubscribedToCount: {
+          $size: "$subscribedTo"
+        },
+        isSubscribed: {
+          $condition: {
+            if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+            then: true,
+            else: false
+          }
+        }
+      }
+    },
+    {
+      $project: {
+        fullName: 1,
+        username: 1,
+        subscribersCount: 1,
+        channelsSubscribedToCount: 1,
+        isSubscribed: 1,
+        avatar: 1,
+        coverImage: 1,
+        email: 1
+      }
+    }
+  ]);
+
+  if(!channel?.length){
+    throw new ApiError(404, "Channel does not exist");
+  }
+
+  return res
+  .status(200)
+  .json(
+    new ApiResponse(200, channel[0], "user channel fetched successfully")
+  );
+});
+
+
+export { registerUser, loginUser , logoutUser, refreshAccessToken, changeCurrentPassword, getCurrentUser , updateAccountDetails, updateUserAvatar, updateUserCoverImage, getUserChannelProfile};
