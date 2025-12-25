@@ -289,7 +289,6 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Something went wrong while uploading avatar");
   }
 
-  //
   const userWithoutUpdation = await User.findById(req.user?._id);
   const oldAvatarUrl = userWithoutUpdation?.avatar;
 
